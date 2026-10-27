@@ -60,7 +60,7 @@ def run_bot(meet_url, bot_name, audio_path):
         chrome_options.add_argument(f"--use-file-for-fake-audio-capture={audio_path}")
         
         # Crucial for Render: Points Selenium to Render's hidden Chrome paths
-        chrome_options.binary_location = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/google-chrome")
+        chrome_options.binary_location = "/usr/bin/google-chrome"
         
         driver = webdriver.Chrome(options=chrome_options)
         driver.get(meet_url)
