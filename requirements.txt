@@ -1,4 +1,4 @@
-flask
-selenium
-webdriver-manager
-werkzeug
+Flask==3.0.2
+Werkzeug==3.0.1
+selenium==4.18.1
+gunicorn==21.2.0
