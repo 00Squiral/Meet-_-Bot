@@ -24,7 +24,7 @@ HTML_TEMPLATE = """
         .card { background: #1e1e1e; padding: 20px; border-radius: 8px; max-width: 400px; margin: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         input[type="text"], input[type="file"] { width: 90%; padding: 12px; margin: 10px 0; border: 1px solid #333; border-radius: 4px; background: #2a2a2a; color: #fff; font-size: 16px; }
         button { background: #007bff; color: white; padding: 14px 28px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; width: 95%; margin-top: 10px; font-weight: bold;}
-        .status { margin-top: 20px; padding: 12px; background: #2d3748; border-radius: 4px; color: #cbd5e0; font-size: 14px; }
+        .status { margin-top: 20px; padding: 12px; background: #2d3748; border-radius: 4px; color: #cbd5e0; font-size: 14px; text-align: left; word-break: break-all; }
     </style>
 </head>
 <body>
@@ -33,8 +33,8 @@ HTML_TEMPLATE = """
         <form action="/run" method="post" enctype="multipart/form-data">
             <input type="text" name="meet_url" placeholder="Google Meet Link" required>
             <input type="text" name="bot_name" placeholder="Custom Display Name" required>
-            <label style="display:block; text-align:left; margin: 10px 0 0 15px; font-size: 12px; color: #aaa;">Upload Audio (.wav or .mp3):</label>
-            <input type="file" name="audio_file" accept=".mp3,.wav" required>
+            <label style="display:block; text-align:left; margin: 10px 0 0 15px; font-size: 12px; color: #aaa;">Upload Audio (Strictly .wav format):</label>
+            <input type="file" name="audio_file" accept=".wav" required>
             <button type="submit">Deploy Bot</button>
         </form>
         {% if status %}
@@ -58,8 +58,6 @@ def run_bot(meet_url, bot_name, audio_path):
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--use-fake-ui-for-media-stream")
         chrome_options.add_argument(f"--use-file-for-fake-audio-capture={audio_path}")
-        
-        # Crucial for Render: Points Selenium to Render's hidden Chrome paths
         chrome_options.binary_location = "/usr/bin/google-chrome"
         
         driver = webdriver.Chrome(options=chrome_options)
@@ -68,21 +66,22 @@ def run_bot(meet_url, bot_name, audio_path):
         
         BOT_STATUS = f"Setting display name to '{bot_name}'..."
         try:
-            name_input = WebDriverWait(driver, 5).until(
+            name_input = WebDriverWait(driver, 6).until(
                 EC.presence_of_element_located((By.XPATH, '//input[@type="text"]'))
             )
             name_input.clear()
             name_input.send_keys(bot_name)
-        except:
+        except Exception:
+            # Sometimes Meet fields load differently or name is pre-set
             pass
             
-        BOT_STATUS = "Clicking Join button..."
+        BOT_STATUS = "Clicking Join/Ask to Join button..."
         join_button = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, '//span[contains(text(), "Join") or contains(text(), "Ask")]'))
         )
         join_button.click()
         
-        # Waiting room loops
+        # Waiting room loop
         BOT_STATUS = "⏳ Stuck in Waiting Room. Waiting for Host to admit..."
         in_meeting = False
         timeout = 300 
@@ -96,13 +95,19 @@ def run_bot(meet_url, bot_name, audio_path):
             
         if in_meeting:
             BOT_STATUS = "✅ Admitted! Broadcasting audio file now..."
-            time.sleep(60) # Plays for 60 seconds
+            time.sleep(60) # Plays audio stream for 60 seconds
             BOT_STATUS = "Audio finished. Disconnecting securely..."
         else:
             BOT_STATUS = "❌ Timed out waiting in the waiting room."
+            driver.save_screenshot('/tmp/meet_timeout.png')
             
     except Exception as e:
         BOT_STATUS = f"❌ Error tracking: {str(e)}"
+        if driver:
+            try:
+                driver.save_screenshot('/tmp/meet_error.png')
+            except:
+                pass
     finally:
         if driver:
             driver.quit()
@@ -121,6 +126,9 @@ def handle_run():
     file = request.files.get('audio_file')
     
     if file and meet_url and bot_name:
+        if not file.filename.lower().endswith('.wav'):
+            return render_template_string(HTML_TEMPLATE, status="❌ Error: Only .wav audio files are supported by Chrome's virtual audio driver.")
+            
         filename = secure_filename(file.filename)
         audio_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(audio_path)
@@ -128,9 +136,9 @@ def handle_run():
         threading.Thread(target=run_bot, args=(meet_url, bot_name, audio_path)).start()
         return redirect(url_for('index'))
         
-    return render_template_string(HTML_TEMPLATE, status="Missing fields.")
+    return render_template_string(HTML_TEMPLATE, status="Missing required fields.")
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-  
+    
